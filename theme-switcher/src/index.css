@@ -1,0 +1,16 @@
+body.light {
+  background-color: #f6f7fb;
+  color: #121212;
+}
+
+body.dark {
+  background-color: #121212;
+  color: #ffffff;
+}
+
+body, html, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Segoe UI", Arial, sans-serif;
+}

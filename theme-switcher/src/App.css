@@ -1,0 +1,63 @@
+/* Smooth animations */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+}
+
+/* Card */
+.theme-card {
+  padding: 40px 50px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+
+/* Toggle switch */
+.toggle-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.switch {
+  width: 55px;
+  height: 28px;
+  background-color: #ccc;
+  border-radius: 40px;
+  position: relative;
+  transition: background-color 0.3s ease;
+}
+
+.switch-circle {
+  width: 22px;
+  height: 22px;
+  background-color: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: left 0.3s ease;
+}
+
+.switch.dark {
+  background-color: #3b3b3b;
+}
+
+.switch.dark .switch-circle {
+  left: 30px;
+}
+
+.icon {
+  font-size: 20px;
+}
