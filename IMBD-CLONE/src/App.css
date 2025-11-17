@@ -4,6 +4,28 @@
   padding: 24px;
 }
 
+/* --- NEW SEARCH BAR STYLES --- */
+.search-bar-container {
+  margin-bottom: 24px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 1.1rem;
+  border-radius: 30px; /* Pill shape */
+  border: 2px solid #ddd;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-input:focus {
+  border-color: #007bff; /* Blue */
+  box-shadow: 0 0 8px rgba(0, 123, 255, 0.25);
+}
+/* --- END NEW STYLES --- */
+
+
 .app-title {
   font-size: 2.5rem;
   font-weight: 800;
@@ -12,6 +34,25 @@
   text-align: center;
 }
 
+/* --- RENAMED AND UPDATED STYLES --- */
+.app-error-message {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: #D93025; /* Error red */
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+/* New class for Loading or "No Results" */
+.app-status-message {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: #555;
+  text-align: center;
+  padding: 40px 0;
+}
+/* --- END UPDATED STYLES --- */
+
 
 .movie-grid {
   display: grid;
@@ -19,18 +60,17 @@
   gap: 24px;
 }
 
+/* ... (rest of your media queries for the grid are unchanged) ... */
 @media (min-width: 640px) {
   .movie-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
 @media (min-width: 768px) {
   .movie-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 }
-
 @media (min-width: 1024px) {
   .movie-grid {
     grid-template-columns: repeat(4, 1fr);

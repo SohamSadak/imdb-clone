@@ -1,97 +1,104 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import MovieCard from './MovieCard';
-import { fetchPopularMovies } from './api'; // Import our new API function
+// Note: You need to make sure MovieCard is imported from the correct path.
+// Based on your files, it might be in 'src/components/MovieCard.jsx'
+import MovieCard from './MovieCard.js'; 
+import { fetchPopularMovies, fetchSearchMovies } from './api.js';
+import useDebounce from './hooks/useDebounce.js';
 
 function App() {
-  // --- State Hooks ---
-  // We use state to store data that changes over time.
+  // State for the list of movies to display
+  const [movieList, setMovieList] = useState([]);
   
-  // 'movies' will hold our list of movies from the API
-  // It starts as an empty array.
-  const [movies, setMovies] = useState([]);
-  
-  // 'isLoading' will show a loading message while we fetch data
-  // It starts as true because we begin loading immediately.
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // 'error' will hold any error message if the API call fails
-  // It starts as null because there is no error yet.
+  // State for loading and errors
+  const [isFetchingData, setIsFetchingData] = useState(true);
   const [error, setError] = useState(null);
 
-  // --- Effect Hook ---
-  // This useEffect hook runs once when the component first mounts
-  // (thanks to the empty dependency array [] at the end).
-  // It's the perfect place to fetch initial data.
-  // 
+  // --- NEW ---
+  // State for the search bar
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // State for the page title
+  const [headerTitle, setHeaderTitle] = useState('Popular Movies');
+  
+  // Debounce the search query
+  // We'll wait 500ms after the user stops typing
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
+  
+  // This effect now runs whenever the *debounced* query changes
   useEffect(() => {
-    // We define an async function inside the effect
+    // Define the async function to load movies
     async function loadMovies() {
       try {
-        // 1. Tell the app we are starting to load
-        setIsLoading(true); 
+        setIsFetchingData(true);
+        setError(null);
         
-        // 2. Call our API function and wait for the results
-        const popularMovies = await fetchPopularMovies();
+        let movies;
         
-        // 3. Store the movies in our state
-        setMovies(popularMovies); 
+        if (debouncedSearchQuery) {
+          // 1. If there's a search query, call fetchSearchMovies
+          setHeaderTitle(`Search Results for "${debouncedSearchQuery}"`);
+          movies = await fetchSearchMovies(debouncedSearchQuery);
+        } else {
+          // 2. If the query is empty, show popular movies
+          setHeaderTitle('Popular Movies');
+          movies = await fetchPopularMovies();
+        }
         
-        // 4. Clear any previous errors
-        setError(null); 
+        setMovieList(movies);
+        
       } catch (err) {
-        // 5. If the fetch fails, store the error message
         setError(err.message);
-        setMovies([]); // Clear any old movie data
+        setMovieList([]); // Clear any old movies
       } finally {
-        // 6. This runs whether the fetch succeeded or failed
-        setIsLoading(false); // We are done loading
+        setIsFetchingData(false); // We are done loading
       }
     }
 
-    // Call the function to start the fetch
-    loadMovies(); 
-    
-  }, []); // The empty array [] means "run this effect only once on mount"
+    loadMovies(); // Call the function
+  }, [debouncedSearchQuery]); // Dependency array: only re-run when this value changes
 
-  // --- Render Logic ---
-  // Now we decide what to show based on our state
-  
-  // 1. Show a loading message
-  if (isLoading) {
-    return (
-      <div className="app-container">
-        <h1 className="app-title">Loading Movies...</h1>
-      </div>
-    );
-  }
-
-  // 2. Show an error message if something went wrong
-  if (error) {
-    return (
-      <div className="app-container">
-        <h1 className="app-title" style={{ color: 'red' }}>
-          Error: {error}
-        </h1>
-        <p style={{ textAlign: 'center' }}>
-          Please make sure you have entered your API key in `src/api.js`.
-        </p>
-      </div>
-    );
-  }
-
-  // 3. Show the movies if everything is successful
   return (
     <div className="app-container">
-      <h1 className="app-title">Popular Movies</h1>
-      <div className="movie-grid">
-        {/* We map over the 'movies' array from our state.
-          For each 'movie' object in the array, we render a MovieCard.
-        */}
-        {movies.map((movie) => (
-          <MovieCard key={movie.id} movie={movie} />
-        ))}
+      
+      {/* --- NEW SEARCH BAR --- */}
+      <div className="search-bar-container">
+        <input
+          type="text"
+          placeholder="Search for a movie..."
+          className="search-input"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
       </div>
+
+      <h1 className="app-title">{headerTitle}</h1>
+
+      {/* 1. Show a loading message */}
+      {isFetchingData && (
+        <p className="app-status-message">Loading movies...</p>
+      )}
+
+      {/* 2. Show an error message */}
+      {error && (
+        <p className="app-error-message">Error: {error}</p>
+      )}
+
+      {/* 3. Show the movie grid (if there are movies) */}
+      {!isFetchingData && !error && movieList.length > 0 && (
+        <div className="movie-grid">
+          {movieList.map((movie) => (
+            <MovieCard key={movie.id} movie={movie} />
+          ))}
+        </div>
+      )}
+      
+      {/* 4. Show "No Results" message (Requirement #3) */}
+      {!isFetchingData && !error && movieList.length === 0 && debouncedSearchQuery && (
+        <p className="app-status-message">
+          No results found for "{debouncedSearchQuery}"
+        </p>
+      )}
     </div>
   );
 }
