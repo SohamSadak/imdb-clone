@@ -1,67 +1,86 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-// Note: You need to make sure MovieCard is imported from the correct path.
-// Based on your files, it might be in 'src/components/MovieCard.jsx'
-import MovieCard from './MovieCard.js'; 
+// Make sure the path is correct (inside components folder)
+import MovieCard from './components/MovieCard.jsx'; 
 import { fetchPopularMovies, fetchSearchMovies } from './api.js';
 import useDebounce from './hooks/useDebounce.js';
 
 function App() {
-  // State for the list of movies to display
   const [movieList, setMovieList] = useState([]);
-  
-  // State for loading and errors
   const [isFetchingData, setIsFetchingData] = useState(true);
   const [error, setError] = useState(null);
-
-  // --- NEW ---
-  // State for the search bar
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // State for the page title
   const [headerTitle, setHeaderTitle] = useState('Popular Movies');
   
-  // Debounce the search query
-  // We'll wait 500ms after the user stops typing
+  // --- NEW PAGINATION STATE ---
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
   
-  // This effect now runs whenever the *debounced* query changes
+  // Effect: Triggered when Search Query changes (Resets everything)
   useEffect(() => {
-    // Define the async function to load movies
-    async function loadMovies() {
+    async function fetchInitialData() {
       try {
         setIsFetchingData(true);
         setError(null);
-        
-        let movies;
-        
+        setPage(1); // Reset to page 1 for new searches
+
+        let data;
         if (debouncedSearchQuery) {
-          // 1. If there's a search query, call fetchSearchMovies
           setHeaderTitle(`Search Results for "${debouncedSearchQuery}"`);
-          movies = await fetchSearchMovies(debouncedSearchQuery);
+          data = await fetchSearchMovies(debouncedSearchQuery, 1);
         } else {
-          // 2. If the query is empty, show popular movies
           setHeaderTitle('Popular Movies');
-          movies = await fetchPopularMovies();
+          data = await fetchPopularMovies(1);
         }
         
-        setMovieList(movies);
+        setMovieList(data.results);
+        setTotalPages(data.totalPages);
         
       } catch (err) {
         setError(err.message);
-        setMovieList([]); // Clear any old movies
+        setMovieList([]);
       } finally {
-        setIsFetchingData(false); // We are done loading
+        setIsFetchingData(false);
       }
     }
 
-    loadMovies(); // Call the function
-  }, [debouncedSearchQuery]); // Dependency array: only re-run when this value changes
+    fetchInitialData();
+  }, [debouncedSearchQuery]);
+
+
+  // --- NEW: LOAD MORE FUNCTION ---
+  const handleLoadMore = async () => {
+    const nextPage = page + 1;
+    
+    try {
+      setIsLoadingMore(true); // Show spinner on button
+      
+      let data;
+      if (debouncedSearchQuery) {
+        data = await fetchSearchMovies(debouncedSearchQuery, nextPage);
+      } else {
+        data = await fetchPopularMovies(nextPage);
+      }
+
+      // Append new movies to the existing list
+      setMovieList((prevMovies) => [...prevMovies, ...data.results]);
+      
+      // Update current page
+      setPage(nextPage);
+      
+    } catch (err) {
+      setError("Failed to load more movies.");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
 
   return (
     <div className="app-container">
-      
-      {/* --- NEW SEARCH BAR --- */}
       <div className="search-bar-container">
         <input
           type="text"
@@ -74,30 +93,35 @@ function App() {
 
       <h1 className="app-title">{headerTitle}</h1>
 
-      {/* 1. Show a loading message */}
-      {isFetchingData && (
-        <p className="app-status-message">Loading movies...</p>
-      )}
+      {isFetchingData && <p className="app-status-message">Loading movies...</p>}
+      {error && <p className="app-error-message">Error: {error}</p>}
 
-      {/* 2. Show an error message */}
-      {error && (
-        <p className="app-error-message">Error: {error}</p>
-      )}
-
-      {/* 3. Show the movie grid (if there are movies) */}
       {!isFetchingData && !error && movieList.length > 0 && (
-        <div className="movie-grid">
-          {movieList.map((movie) => (
-            <MovieCard key={movie.id} movie={movie} />
-          ))}
-        </div>
+        <>
+          <div className="movie-grid">
+            {movieList.map((movie, index) => (
+              // Use index in key fallback to ensure uniqueness when appending
+              <MovieCard key={`${movie.id}-${index}`} movie={movie} />
+            ))}
+          </div>
+
+          {/* --- NEW: LOAD MORE BUTTON --- */}
+          {page < totalPages && (
+            <div className="load-more-container">
+              <button 
+                className="load-more-btn" 
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore ? 'Loading...' : 'Load More Movies'}
+              </button>
+            </div>
+          )}
+        </>
       )}
       
-      {/* 4. Show "No Results" message (Requirement #3) */}
       {!isFetchingData && !error && movieList.length === 0 && debouncedSearchQuery && (
-        <p className="app-status-message">
-          No results found for "{debouncedSearchQuery}"
-        </p>
+        <p className="app-status-message">No results found for "{debouncedSearchQuery}"</p>
       )}
     </div>
   );

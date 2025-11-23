@@ -76,3 +76,38 @@
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+
+/* ... (keep your existing styles) ... */
+
+/* --- LOAD MORE BUTTON --- */
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  margin: 40px 0;
+}
+
+.load-more-btn {
+  background-color: #f5c518; /* IMDb Yellow */
+  color: #111;
+  border: none;
+  padding: 12px 32px;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.load-more-btn:hover {
+  background-color: #e2b616;
+  transform: translateY(-2px);
+}
+
+.load-more-btn:disabled {
+  background-color: #ccc;
+  color: #666;
+  cursor: not-allowed;
+  transform: none;
+}

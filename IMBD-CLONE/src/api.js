@@ -18,7 +18,13 @@ async function fetchFromTMDB(endpoint) {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
     const data = await response.json();
-    return data.results;
+    
+    // --- UPDATED RETURN ---
+    // We now return an object with both the movie list AND total pages
+    return {
+      results: data.results,
+      totalPages: data.total_pages
+    };
   } catch (error) {
     console.error(`Failed to fetch from ${endpoint}:`, error);
     throw new Error(error.message || 'Failed to fetch movies.');
@@ -26,19 +32,16 @@ async function fetchFromTMDB(endpoint) {
 }
 
 /**
- * Fetches the list of popular movies
+ * Fetches the list of popular movies (Updated for Pagination)
  */
-export function fetchPopularMovies() {
-  return fetchFromTMDB(`movie/popular?api_key=${TMDB_API_KEY}&language=en-US&page=1`);
+export function fetchPopularMovies(page = 1) {
+  return fetchFromTMDB(`movie/popular?api_key=${TMDB_API_KEY}&language=en-US&page=${page}`);
 }
 
 /**
- * --- NEW FUNCTION ---
- * Fetches movies based on a search query
- * @param {string} query The user's search term
+ * Fetches movies based on a search query (Updated for Pagination)
  */
-export function fetchSearchMovies(query) {
-  // We must encode the query to make it URL-safe
+export function fetchSearchMovies(query, page = 1) {
   const encodedQuery = encodeURIComponent(query);
-  return fetchFromTMDB(`search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodedQuery}&page=1`);
+  return fetchFromTMDB(`search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodedQuery}&page=${page}`);
 }
