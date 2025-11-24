@@ -45,3 +45,14 @@ export function fetchSearchMovies(query, page = 1) {
   const encodedQuery = encodeURIComponent(query);
   return fetchFromTMDB(`search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodedQuery}&page=${page}`);
 }
+
+// ... existing imports and functions ...
+
+/**
+ * Fetches detailed info for a single movie, including cast
+ * @param {number} movieId The ID of the movie
+ */
+export async function fetchMovieDetails(movieId) {
+  // append_to_response=credits lets us get cast info in the same call
+  return fetchFromTMDB(`movie/${movieId}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`);
+}

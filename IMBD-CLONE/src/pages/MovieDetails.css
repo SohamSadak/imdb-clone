@@ -1,0 +1,104 @@
+.details-container {
+  color: #fff;
+  background-color: #1a1a1a;
+  min-height: 100vh;
+}
+
+.back-button {
+  display: inline-block;
+  margin: 20px;
+  padding: 10px 20px;
+  background-color: #333;
+  color: white;
+  text-decoration: none;
+  border-radius: 5px;
+  font-weight: bold;
+  position: absolute; /* Sit on top of hero */
+  z-index: 10;
+}
+
+.details-hero {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  min-height: 100vh;
+}
+
+.hero-overlay {
+  background: linear-gradient(to bottom, rgba(0,0,0,0.7), #1a1a1a);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 1000px;
+  margin-top: 60px;
+}
+
+@media (min-width: 768px) {
+  .details-content {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+.details-poster {
+  width: 300px;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(0,0,0,0.5);
+}
+
+.details-info {
+  flex: 1;
+}
+
+.details-title {
+  font-size: 3rem;
+  margin: 0 0 10px 0;
+}
+
+.details-tagline {
+  font-style: italic;
+  font-size: 1.2rem;
+  color: #aaa;
+  margin-bottom: 20px;
+}
+
+.details-meta {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 30px;
+  font-size: 1.1rem;
+}
+
+.rating-badge {
+  background-color: #f5c518;
+  color: black;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-weight: bold;
+}
+
+.details-section {
+  margin-bottom: 20px;
+}
+
+.details-section h3 {
+  color: #f5c518;
+  margin-bottom: 5px;
+  font-size: 1.2rem;
+}
+
+.details-loading, .details-error {
+  text-align: center;
+  padding: 50px;
+  color: white;
+  font-size: 1.5rem;
+}
