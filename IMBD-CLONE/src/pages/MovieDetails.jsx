@@ -1,36 +1,50 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { fetchMovieDetails, TMDB_IMAGE_BASE_URL } from '../api.js';
+// Import our reusable UI components
+import Loader from '../components/Loader.jsx'; 
+import ErrorMessage from '../components/ErrorMessage.jsx'; 
 import './MovieDetails.css';
 
 function MovieDetails() {
-  const { id } = useParams(); // Get the ID from the URL (e.g., /movie/550)
+  const { id } = useParams();
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    async function loadDetails() {
-      try {
-        const data = await fetchMovieDetails(id);
-        setMovie(data);
-      } catch (err) {
-        setError("Failed to load movie details.");
-      } finally {
-        setLoading(false);
-      }
+  // Define the load function so we can call it again if the user clicks "Try Again"
+  const loadDetails = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchMovieDetails(id);
+      setMovie(data);
+    } catch (err) {
+      setError("Failed to load movie details. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    loadDetails();
   }, [id]);
 
-  if (loading) return <div className="details-loading">Loading Movie Details...</div>;
-  if (error) return <div className="details-error">{error}</div>;
+  useEffect(() => {
+    loadDetails();
+  }, [loadDetails]);
+
+  // 1. Show Loader centered on the screen
+  if (loading) return <div className="details-center"><Loader /></div>;
+  
+  // 2. Show Error with Retry button
+  if (error) return (
+    <div className="details-center">
+      <ErrorMessage message={error} onRetry={loadDetails} />
+      <Link to="/" className="back-button-inline">Go Home</Link>
+    </div>
+  );
+
   if (!movie) return null;
 
-  // Format genres as a string
+  // Format genres safely
   const genres = movie.genres?.map(g => g.name).join(', ');
-  
-  // Get top 5 cast members
   const cast = movie.credits?.cast?.slice(0, 5).map(c => c.name).join(', ');
 
   const backdropUrl = movie.backdrop_path 
@@ -39,10 +53,8 @@ function MovieDetails() {
 
   return (
     <div className="details-container">
-      {/* Back Button */}
       <Link to="/" className="back-button">← Back to Home</Link>
 
-      {/* Hero Section with Backdrop */}
       <div 
         className="details-hero"
         style={backdropUrl ? { backgroundImage: `url(${backdropUrl})` } : {}}
