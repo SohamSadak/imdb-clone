@@ -1,14 +1,16 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+// Import the AuthProvider we created for Firebase
+import { AuthProvider } from './contexts/AuthContext'; 
 import './index.css';
-import App from './App'; // CRA automatically finds App.jsx or App.js
+import App from './App';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
+    {/* Wrap the App in AuthProvider so user data is available everywhere */}
+    <AuthProvider>
       <App />
-    </BrowserRouter>
+    </AuthProvider>
   </React.StrictMode>
 );
