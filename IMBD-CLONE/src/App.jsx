@@ -59,11 +59,65 @@ function FavoritesProvider({ children }) {
   );
 }
 
-// --- COMPONENTS ---
+// --- SKELETON COMPONENTS ---
+
+function SkeletonCard() {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-lg ring-1 ring-gray-200 dark:ring-gray-700 animate-pulse">
+      {/* Poster Placeholder */}
+      <div className="aspect-[2/3] bg-gray-300 dark:bg-gray-700 w-full" />
+      
+      {/* Content Placeholder */}
+      <div className="p-4 space-y-3">
+        {/* Title */}
+        <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-3/4" />
+        
+        {/* Meta Row */}
+        <div className="flex justify-between items-center">
+          <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-1/4" />
+          <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-12" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonDetails() {
+  return (
+    <div className="min-h-screen p-4 sm:p-8 max-w-7xl mx-auto animate-pulse">
+      {/* Back Button */}
+      <div className="w-24 h-8 bg-gray-300 dark:bg-gray-700 rounded mb-8" />
+      
+      <div className="flex flex-col lg:flex-row gap-8 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl">
+        {/* Poster */}
+        <div className="flex-shrink-0 w-full lg:w-96">
+          <div className="aspect-[2/3] bg-gray-300 dark:bg-gray-700 rounded-lg" />
+        </div>
+        
+        {/* Info */}
+        <div className="flex-grow space-y-6">
+          <div className="h-10 bg-gray-300 dark:bg-gray-700 rounded w-3/4" />
+          <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-1/3" />
+          
+          <div className="space-y-3 pt-4">
+            <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-full" />
+            <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-full" />
+            <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-5/6" />
+          </div>
+          
+          <div className="h-12 bg-gray-300 dark:bg-gray-700 rounded w-48 mt-8" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MOVIE CARD COMPONENT ---
 
 function MovieCard({ movie }) {
   const { isFavorite, addToFavorites, removeFromFavorites } = useFavorites();
   const favorite = isFavorite(movie.id);
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
 
   const handleFavoriteClick = (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -84,12 +138,23 @@ function MovieCard({ movie }) {
         >
           <HeartIcon className="h-5 w-5 fill-current"/>
         </button>
-        <div className="relative aspect-[2/3] overflow-hidden">
-            <img src={posterUrl} alt={movie.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+        
+        <div className="relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-800">
+            {/* Smooth Image Loading */}
+            <img 
+              src={posterUrl} 
+              alt={movie.title} 
+              loading="lazy" 
+              onLoad={() => setIsImageLoaded(true)}
+              className={`w-full h-full object-cover transition-all duration-700 group-hover:scale-110 
+                ${isImageLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-sm'}`} 
+            />
+            
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                 <p className="text-white text-sm line-clamp-3">{movie.overview}</p>
             </div>
         </div>
+        
         <div className="p-4">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">{movie.title}</h3>
           <div className="flex justify-between items-center mt-2 text-sm">
@@ -105,7 +170,7 @@ function MovieCard({ movie }) {
   );
 }
 
-// --- HOME PAGE (With Real Filtering) ---
+// --- HOME PAGE ---
 function HomePage() {
     const { toggleTheme, mode } = useContext(ThemeContext);
     const [movies, setMovies] = useState([]);
@@ -113,19 +178,16 @@ function HomePage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [genreList, setGenreList] = useState([]);
     
-    // Filters State
     const [filters, setFilters] = useState({
         genreId: '',
         year: '',
         sortBy: 'popularity.desc'
     });
 
-    // Load Genres on Mount
     useEffect(() => {
         fetchGenres().then(setGenreList).catch(console.error);
     }, []);
 
-    // Main Data Fetcher
     useEffect(() => {
         const loadMovies = async () => {
             setLoading(true);
@@ -140,29 +202,26 @@ function HomePage() {
             } catch (err) {
                 console.error(err);
             } finally {
+                // Keep loading true for a split second longer to prevent flicker on fast connections
+                // or just set it to false immediately.
                 setLoading(false);
             }
         };
 
-        // Debounce search
         const timeoutId = setTimeout(loadMovies, 500);
         return () => clearTimeout(timeoutId);
     }, [searchQuery, filters]);
 
-    // Handlers
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
-        // If user filters, clear search query to avoid confusion
         if (searchQuery) setSearchQuery(''); 
     };
 
-    // Generate years for dropdown
     const currentYear = new Date().getFullYear();
     const years = Array.from({length: 50}, (_, i) => currentYear - i);
 
     return (
         <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
-            {/* Header */}
             <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
                 <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-orange-500 tracking-tighter">
                     MovieExplorer
@@ -177,9 +236,7 @@ function HomePage() {
                 </div>
             </header>
 
-            {/* Controls Section */}
             <section className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 mb-8 space-y-4">
-                {/* Search Bar */}
                 <div className="relative">
                     <input 
                         type="text" 
@@ -191,10 +248,7 @@ function HomePage() {
                     <svg className="w-6 h-6 absolute left-3 top-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
 
-                {/* Filters Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    
-                    {/* Genre Filter */}
                     <div className="relative">
                         <select 
                             value={filters.genreId}
@@ -207,7 +261,6 @@ function HomePage() {
                         <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
                     </div>
 
-                    {/* Year Filter */}
                     <div className="relative">
                         <select 
                             value={filters.year}
@@ -220,7 +273,6 @@ function HomePage() {
                         <svg className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     </div>
 
-                    {/* Sort Filter */}
                     <div className="relative">
                         <select 
                             value={filters.sortBy}
@@ -237,10 +289,11 @@ function HomePage() {
                 </div>
             </section>
 
-            {/* Results Grid */}
+            {/* SKELETON LOADING STATE */}
             {loading ? (
-                <div className="flex justify-center items-center py-20">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-red-600"></div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                    {/* Render 10 SkeletonCards while loading */}
+                    {[...Array(10)].map((_, i) => <SkeletonCard key={i} />)}
                 </div>
             ) : movies.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
@@ -290,13 +343,16 @@ function MovieDetails() {
     const { isFavorite, addToFavorites, removeFromFavorites } = useFavorites();
 
     useEffect(() => {
+        setLoading(true);
         fetchMovieDetails(id)
             .then(setMovie)
             .catch(console.error)
             .finally(() => setLoading(false));
     }, [id]);
 
-    if (loading) return <div className="min-h-screen flex justify-center items-center"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-red-600"></div></div>;
+    // Use SkeletonDetails while loading
+    if (loading) return <SkeletonDetails />;
+    
     if (!movie) return <div className="min-h-screen flex justify-center items-center">Movie not found</div>;
 
     const favorite = isFavorite(movie.id);

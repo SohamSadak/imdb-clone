@@ -111,3 +111,19 @@
   cursor: not-allowed;
   transform: none;
 }
+
+/* Skeleton Pulse Animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Utility classes used in the code if Tailwind isn't set up */
+.bg-gray-300 { background-color: #d1d5db; }
+.dark .bg-gray-700 { background-color: #374151; }
+.rounded-xl { border-radius: 0.75rem; }
+.aspect-\[2\/3\] { aspect-ratio: 2/3; }
