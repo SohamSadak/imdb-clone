@@ -6,24 +6,24 @@ export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 /**
  * Helper to handle API requests and errors
  */
-async function fetchFromTMDB(endpoint) {
-  const url = `${TMDB_API_BASE_URL}/${endpoint}`;
+async function fetchFromTMDB(endpoint, params = {}) {
+  const queryParams = new URLSearchParams({
+    api_key: TMDB_API_KEY,
+    language: 'en-US',
+    ...params
+  });
+
+  const url = `${TMDB_API_BASE_URL}/${endpoint}?${queryParams.toString()}`;
   
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      if (response.status === 401) {
-         throw new Error('API key is invalid or missing. Please check src/api.js');
-      }
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
     const data = await response.json();
-    
-    // --- UPDATED RETURN ---
-    // We now return an object with both the movie list AND total pages
     return {
-      results: data.results,
-      totalPages: data.total_pages
+      results: data.results || [],
+      totalPages: data.total_pages || 0
     };
   } catch (error) {
     console.error(`Failed to fetch from ${endpoint}:`, error);
@@ -32,27 +32,45 @@ async function fetchFromTMDB(endpoint) {
 }
 
 /**
- * Fetches the list of popular movies (Updated for Pagination)
+ * Fetches the list of official movie genres
  */
-export function fetchPopularMovies(page = 1) {
-  return fetchFromTMDB(`movie/popular?api_key=${TMDB_API_KEY}&language=en-US&page=${page}`);
+export async function fetchGenres() {
+  const url = `${TMDB_API_BASE_URL}/genre/movie/list?api_key=${TMDB_API_KEY}&language=en-US`;
+  const response = await fetch(url);
+  const data = await response.json();
+  return data.genres || [];
 }
 
 /**
- * Fetches movies based on a search query (Updated for Pagination)
+ * Advanced Discover/Filter Search
+ * @param {Object} filters - { genreId, year, sortBy, page }
  */
+export function fetchDiscoverMovies(filters = {}) {
+  const { genreId, year, sortBy, page = 1 } = filters;
+  
+  const params = {
+    page,
+    sort_by: sortBy || 'popularity.desc',
+    include_adult: false,
+    include_video: false,
+  };
+
+  if (genreId) params.with_genres = genreId;
+  if (year) params.primary_release_year = year;
+
+  return fetchFromTMDB('discover/movie', params);
+}
+
 export function fetchSearchMovies(query, page = 1) {
-  const encodedQuery = encodeURIComponent(query);
-  return fetchFromTMDB(`search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodedQuery}&page=${page}`);
+  return fetchFromTMDB('search/movie', { query, page });
 }
 
-// ... existing imports and functions ...
+export function fetchMovieDetails(movieId) {
+  return fetchFromTMDB(`movie/${movieId}`, { append_to_response: 'credits' })
+    .then(data => data.results || data); 
+}
 
-/**
- * Fetches detailed info for a single movie, including cast
- * @param {number} movieId The ID of the movie
- */
-export async function fetchMovieDetails(movieId) {
-  // append_to_response=credits lets us get cast info in the same call
-  return fetchFromTMDB(`movie/${movieId}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits`);
+// Fallback for popular (uses discover with default sort)
+export function fetchPopularMovies(page = 1) {
+  return fetchDiscoverMovies({ sortBy: 'popularity.desc', page });
 }
