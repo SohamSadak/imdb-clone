@@ -1,5 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, signInWithGoogle, logout } from './firebase'; // Import auth functions
 import { 
     fetchDiscoverMovies, 
     fetchSearchMovies, 
@@ -14,11 +16,15 @@ const MoonIcon = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" f
 const HeartIcon = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>;
 const StarIcon = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>;
 const FilterIcon = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" /></svg>;
+const GoogleIcon = (props) => <svg {...props} viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>;
 
 // --- CONTEXTS ---
 const ThemeContext = createContext();
+const AuthContext = createContext(); // New Auth Context
 const FavoritesContext = createContext();
+
 const useFavorites = () => useContext(FavoritesContext);
+const useAuth = () => useContext(AuthContext); // Hook to use Auth
 
 function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
@@ -39,12 +45,48 @@ function ThemeProvider({ children }) {
   return <ThemeContext.Provider value={{ theme, mode, toggleTheme }}>{children}</ThemeContext.Provider>;
 }
 
-function FavoritesProvider({ children }) {
-  const [favorites, setFavorites] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('movieFavorites')) || []; } catch { return []; }
-  });
+// --- AUTH PROVIDER ---
+function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { localStorage.setItem('movieFavorites', JSON.stringify(favorites)); }, [favorites]);
+  useEffect(() => {
+    // Listen for Firebase Auth changes
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const value = { user, signInWithGoogle, logout, loading };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+// --- FAVORITES PROVIDER (Personalized) ---
+function FavoritesProvider({ children }) {
+  const { user } = useAuth(); // Access current user
+  
+  // Create a unique storage key based on User ID
+  const storageKey = user ? `movieFavorites_${user.uid}` : 'movieFavorites_guest';
+
+  const [favorites, setFavorites] = useState([]);
+
+  // Load favorites whenever the user changes (User A logs out, User B logs in)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      setFavorites(saved ? JSON.parse(saved) : []);
+    } catch {
+      setFavorites([]);
+    }
+  }, [storageKey]);
+
+  // Save favorites whenever they change
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(favorites));
+  }, [favorites, storageKey]);
 
   const addToFavorites = (movie) => {
     setFavorites(prev => prev.some(m => m.id === movie.id) ? prev : [...prev, movie]);
@@ -59,20 +101,13 @@ function FavoritesProvider({ children }) {
   );
 }
 
-// --- SKELETON COMPONENTS ---
-
+// --- SKELETONS ---
 function SkeletonCard() {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-lg ring-1 ring-gray-200 dark:ring-gray-700 animate-pulse">
-      {/* Poster Placeholder */}
       <div className="aspect-[2/3] bg-gray-300 dark:bg-gray-700 w-full" />
-      
-      {/* Content Placeholder */}
       <div className="p-4 space-y-3">
-        {/* Title */}
         <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-3/4" />
-        
-        {/* Meta Row */}
         <div className="flex justify-between items-center">
           <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-1/4" />
           <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-12" />
@@ -85,26 +120,19 @@ function SkeletonCard() {
 function SkeletonDetails() {
   return (
     <div className="min-h-screen p-4 sm:p-8 max-w-7xl mx-auto animate-pulse">
-      {/* Back Button */}
       <div className="w-24 h-8 bg-gray-300 dark:bg-gray-700 rounded mb-8" />
-      
       <div className="flex flex-col lg:flex-row gap-8 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-2xl">
-        {/* Poster */}
         <div className="flex-shrink-0 w-full lg:w-96">
           <div className="aspect-[2/3] bg-gray-300 dark:bg-gray-700 rounded-lg" />
         </div>
-        
-        {/* Info */}
         <div className="flex-grow space-y-6">
           <div className="h-10 bg-gray-300 dark:bg-gray-700 rounded w-3/4" />
           <div className="h-6 bg-gray-300 dark:bg-gray-700 rounded w-1/3" />
-          
           <div className="space-y-3 pt-4">
             <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-full" />
             <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-full" />
             <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-5/6" />
           </div>
-          
           <div className="h-12 bg-gray-300 dark:bg-gray-700 rounded w-48 mt-8" />
         </div>
       </div>
@@ -112,8 +140,7 @@ function SkeletonDetails() {
   );
 }
 
-// --- MOVIE CARD COMPONENT ---
-
+// --- UI COMPONENTS ---
 function MovieCard({ movie }) {
   const { isFavorite, addToFavorites, removeFromFavorites } = useFavorites();
   const favorite = isFavorite(movie.id);
@@ -138,9 +165,7 @@ function MovieCard({ movie }) {
         >
           <HeartIcon className="h-5 w-5 fill-current"/>
         </button>
-        
         <div className="relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-800">
-            {/* Smooth Image Loading */}
             <img 
               src={posterUrl} 
               alt={movie.title} 
@@ -149,12 +174,10 @@ function MovieCard({ movie }) {
               className={`w-full h-full object-cover transition-all duration-700 group-hover:scale-110 
                 ${isImageLoaded ? 'opacity-100 blur-0' : 'opacity-0 blur-sm'}`} 
             />
-            
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                 <p className="text-white text-sm line-clamp-3">{movie.overview}</p>
             </div>
         </div>
-        
         <div className="p-4">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">{movie.title}</h3>
           <div className="flex justify-between items-center mt-2 text-sm">
@@ -170,44 +193,85 @@ function MovieCard({ movie }) {
   );
 }
 
-// --- HOME PAGE ---
+// --- NEW HEADER COMPONENT WITH AUTH ---
+function Header() {
+  const { toggleTheme, mode } = useContext(ThemeContext);
+  const { user, signInWithGoogle, logout } = useAuth();
+
+  return (
+    <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row items-center gap-4">
+            <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-orange-500 tracking-tighter">
+                MovieExplorer
+            </h1>
+            {user && (
+                <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    Welcome back, {user.displayName.split(' ')[0]}!
+                </span>
+            )}
+        </div>
+        
+        <div className="flex items-center gap-3">
+            <button onClick={() => toggleTheme(mode === 'dark' ? 'light' : 'dark')} className="p-2.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                {mode === 'dark' ? <SunIcon className="w-5 h-5"/> : <MoonIcon className="w-5 h-5"/>}
+            </button>
+
+            {/* Auth Button Logic */}
+            {user ? (
+                <>
+                    <Link to="/favorites" className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full font-bold transition-all shadow-md hover:shadow-red-500/20">
+                        <HeartIcon className="w-5 h-5 fill-current"/> My Favorites
+                    </Link>
+                    <div className="relative group">
+                        <img 
+                            src={user.photoURL} 
+                            alt={user.displayName} 
+                            className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-700 cursor-pointer"
+                        />
+                        <button 
+                            onClick={logout}
+                            className="absolute top-12 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl rounded-lg py-2 px-4 text-sm font-bold text-red-500 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity"
+                        >
+                            Sign Out
+                        </button>
+                    </div>
+                </>
+            ) : (
+                <button 
+                    onClick={signInWithGoogle}
+                    className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white px-5 py-2.5 rounded-full font-bold transition-all hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                    <div className="w-5 h-5"><GoogleIcon /></div>
+                    Sign In
+                </button>
+            )}
+        </div>
+    </header>
+  );
+}
+
+// --- PAGES ---
+
 function HomePage() {
-    const { toggleTheme, mode } = useContext(ThemeContext);
     const [movies, setMovies] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [genreList, setGenreList] = useState([]);
-    
-    const [filters, setFilters] = useState({
-        genreId: '',
-        year: '',
-        sortBy: 'popularity.desc'
-    });
+    const [filters, setFilters] = useState({ genreId: '', year: '', sortBy: 'popularity.desc' });
 
-    useEffect(() => {
-        fetchGenres().then(setGenreList).catch(console.error);
-    }, []);
+    useEffect(() => { fetchGenres().then(setGenreList).catch(console.error); }, []);
 
     useEffect(() => {
         const loadMovies = async () => {
             setLoading(true);
             try {
                 let data;
-                if (searchQuery.trim()) {
-                    data = await fetchSearchMovies(searchQuery);
-                } else {
-                    data = await fetchDiscoverMovies(filters);
-                }
+                if (searchQuery.trim()) data = await fetchSearchMovies(searchQuery);
+                else data = await fetchDiscoverMovies(filters);
                 setMovies(data.results || []);
-            } catch (err) {
-                console.error(err);
-            } finally {
-                // Keep loading true for a split second longer to prevent flicker on fast connections
-                // or just set it to false immediately.
-                setLoading(false);
-            }
+            } catch (err) { console.error(err); } 
+            finally { setLoading(false); }
         };
-
         const timeoutId = setTimeout(loadMovies, 500);
         return () => clearTimeout(timeoutId);
     }, [searchQuery, filters]);
@@ -222,19 +286,7 @@ function HomePage() {
 
     return (
         <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
-            <header className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
-                <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-orange-500 tracking-tighter">
-                    MovieExplorer
-                </h1>
-                <div className="flex items-center gap-3">
-                    <button onClick={() => toggleTheme(mode === 'dark' ? 'light' : 'dark')} className="p-2.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                        {mode === 'dark' ? <SunIcon className="w-5 h-5"/> : <MoonIcon className="w-5 h-5"/>}
-                    </button>
-                    <Link to="/favorites" className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full font-bold transition-all shadow-md hover:shadow-red-500/20">
-                        <HeartIcon className="w-5 h-5 fill-current"/> Favorites
-                    </Link>
-                </div>
-            </header>
+            <Header />
 
             <section className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 mb-8 space-y-4">
                 <div className="relative">
@@ -247,52 +299,34 @@ function HomePage() {
                     />
                     <svg className="w-6 h-6 absolute left-3 top-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="relative">
-                        <select 
-                            value={filters.genreId}
-                            onChange={(e) => handleFilterChange('genreId', e.target.value)}
-                            className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
-                        >
+                        <select value={filters.genreId} onChange={(e) => handleFilterChange('genreId', e.target.value)} className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer">
                             <option value="">All Genres</option>
                             {genreList.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                         </select>
                         <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
                     </div>
-
                     <div className="relative">
-                        <select 
-                            value={filters.year}
-                            onChange={(e) => handleFilterChange('year', e.target.value)}
-                            className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
-                        >
+                        <select value={filters.year} onChange={(e) => handleFilterChange('year', e.target.value)} className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer">
                             <option value="">Any Year</option>
                             {years.map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
-                        <svg className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
                     </div>
-
                     <div className="relative">
-                        <select 
-                            value={filters.sortBy}
-                            onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-                            className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
-                        >
+                        <select value={filters.sortBy} onChange={(e) => handleFilterChange('sortBy', e.target.value)} className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer">
                             <option value="popularity.desc">Most Popular</option>
                             <option value="vote_average.desc">Highest Rated</option>
                             <option value="primary_release_date.desc">Newest Releases</option>
-                            <option value="revenue.desc">Highest Revenue</option>
                         </select>
-                        <svg className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                        <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
                     </div>
                 </div>
             </section>
 
-            {/* SKELETON LOADING STATE */}
             {loading ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                    {/* Render 10 SkeletonCards while loading */}
                     {[...Array(10)].map((_, i) => <SkeletonCard key={i} />)}
                 </div>
             ) : movies.length > 0 ? (
@@ -302,20 +336,23 @@ function HomePage() {
             ) : (
                 <div className="text-center py-20">
                     <p className="text-xl text-gray-500">No movies found matching your criteria.</p>
-                    <button onClick={() => {setSearchQuery(''); setFilters({genreId:'', year:'', sortBy:'popularity.desc'})}} className="mt-4 text-red-500 hover:underline">Clear all filters</button>
                 </div>
             )}
         </div>
     );
 }
 
-// --- FAVORITES PAGE ---
 function FavoritesPage() {
     const { favorites } = useFavorites();
+    const { user } = useAuth(); // personalized message
+
     return (
         <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
             <header className="flex justify-between items-center mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Collection</h1>
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Collection</h1>
+                    {user && <p className="text-gray-500 text-sm mt-1">Saved for {user.email}</p>}
+                </div>
                 <Link to="/" className="text-gray-500 hover:text-red-500 transition-colors">← Back to Discover</Link>
             </header>
             {favorites.length === 0 ? (
@@ -333,13 +370,11 @@ function FavoritesPage() {
     );
 }
 
-// --- MOVIE DETAILS PAGE ---
 function MovieDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [movie, setMovie] = useState(null);
     const [loading, setLoading] = useState(true);
-
     const { isFavorite, addToFavorites, removeFromFavorites } = useFavorites();
 
     useEffect(() => {
@@ -350,9 +385,7 @@ function MovieDetails() {
             .finally(() => setLoading(false));
     }, [id]);
 
-    // Use SkeletonDetails while loading
     if (loading) return <SkeletonDetails />;
-    
     if (!movie) return <div className="min-h-screen flex justify-center items-center">Movie not found</div>;
 
     const favorite = isFavorite(movie.id);
@@ -387,17 +420,19 @@ function MovieDetails() {
 export default function App() {
   return (
     <ThemeProvider>
-        <FavoritesProvider>
-            <Router>
-                <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300">
-                    <Routes>
-                        <Route path="/" element={<HomePage />} />
-                        <Route path="/favorites" element={<FavoritesPage />} />
-                        <Route path="/movie/:id" element={<MovieDetails />} />
-                    </Routes>
-                </div>
-            </Router>
-        </FavoritesProvider>
+        <AuthProvider>
+            <FavoritesProvider>
+                <Router>
+                    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300">
+                        <Routes>
+                            <Route path="/" element={<HomePage />} />
+                            <Route path="/favorites" element={<FavoritesPage />} />
+                            <Route path="/movie/:id" element={<MovieDetails />} />
+                        </Routes>
+                    </div>
+                </Router>
+            </FavoritesProvider>
+        </AuthProvider>
     </ThemeProvider>
   );
 }

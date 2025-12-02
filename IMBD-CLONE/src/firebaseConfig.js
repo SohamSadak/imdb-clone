@@ -1,15 +1,28 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 
-// these variables are provided by the environment
-const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// REPLACE WITH YOUR ACTUAL CONFIG FROM FIREBASE CONSOLE
+const firebaseConfig = {
+  apiKey: "AIzaSy...", 
+  authDomain: "your-app.firebaseapp.com",
+  projectId: "your-app",
+  storageBucket: "your-app.appspot.com",
+  messagingSenderId: "123...",
+  appId: "1:123..."
+};
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig, appId);
-
-// Initialize Services
+const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const APP_ID = appId;
+export const googleProvider = new GoogleAuthProvider();
+
+export const signInWithGoogle = async () => {
+  try {
+    await signInWithPopup(auth, googleProvider);
+  } catch (err) {
+    console.error("Error signing in", err);
+  }
+};
+
+export const logout = () => {
+  signOut(auth);
+};
