@@ -1,7 +1,25 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth, signInWithGoogle, logout } from './firebase'; // Import auth functions
+// --- FIREBASE IMPORTS ---
+import { initializeApp } from 'firebase/app';
+import { 
+    getAuth, 
+    signInAnonymously, 
+    signInWithPopup, 
+    GoogleAuthProvider, 
+    signOut, 
+    onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+    getFirestore, 
+    collection, 
+    addDoc, 
+    deleteDoc, 
+    doc, 
+    onSnapshot, 
+    query, 
+    where 
+} from 'firebase/firestore';
 import { 
     fetchDiscoverMovies, 
     fetchSearchMovies, 
@@ -20,11 +38,11 @@ const GoogleIcon = (props) => <svg {...props} viewBox="0 0 24 24"><path d="M22.5
 
 // --- CONTEXTS ---
 const ThemeContext = createContext();
-const AuthContext = createContext(); // New Auth Context
+const AuthContext = createContext();
 const FavoritesContext = createContext();
 
 const useFavorites = () => useContext(FavoritesContext);
-const useAuth = () => useContext(AuthContext); // Hook to use Auth
+const useAuth = () => useContext(AuthContext);
 
 function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'system');
@@ -45,53 +63,131 @@ function ThemeProvider({ children }) {
   return <ThemeContext.Provider value={{ theme, mode, toggleTheme }}>{children}</ThemeContext.Provider>;
 }
 
-// --- AUTH PROVIDER ---
+// --- AUTH & FIREBASE INIT ---
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [db, setDb] = useState(null);
+  const [authInstance, setAuthInstance] = useState(null);
 
   useEffect(() => {
-    // Listen for Firebase Auth changes
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    // Initialize Firebase
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    
+    if (Object.keys(firebaseConfig).length > 0) {
+        const app = initializeApp(firebaseConfig, appId);
+        const auth = getAuth(app);
+        const dbInstance = getFirestore(app);
+        
+        setAuthInstance(auth);
+        setDb(dbInstance);
+
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    } else {
+        setLoading(false);
+    }
   }, []);
 
-  const value = { user, signInWithGoogle, logout, loading };
+  const signInWithGoogle = async () => {
+    if (authInstance) {
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(authInstance, provider);
+        } catch (error) {
+            console.error("Auth Error", error);
+        }
+    }
+  };
+
+  const logout = () => {
+    if (authInstance) signOut(authInstance);
+  };
+
+  const value = { user, signInWithGoogle, logout, loading, db };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-// --- FAVORITES PROVIDER (Personalized) ---
+// --- CLOUD WATCHLIST PROVIDER ---
 function FavoritesProvider({ children }) {
-  const { user } = useAuth(); // Access current user
-  
-  // Create a unique storage key based on User ID
-  const storageKey = user ? `movieFavorites_${user.uid}` : 'movieFavorites_guest';
-
+  const { user, db } = useAuth();
   const [favorites, setFavorites] = useState([]);
 
-  // Load favorites whenever the user changes (User A logs out, User B logs in)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      setFavorites(saved ? JSON.parse(saved) : []);
-    } catch {
-      setFavorites([]);
+    if (user && db) {
+        // --- 1. CLOUD MODE (Logged In) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const watchlistRef = collection(db, 'artifacts', appId, 'users', user.uid, 'watchlist');
+        
+        const unsubscribe = onSnapshot(watchlistRef, (snapshot) => {
+            const cloudFavs = snapshot.docs.map(doc => ({
+                firestoreId: doc.id, // Needed for deletion
+                ...doc.data()
+            }));
+            setFavorites(cloudFavs);
+        });
+        return () => unsubscribe();
+    } else {
+        // --- 2. GUEST MODE (LocalStorage) ---
+        try {
+            const saved = localStorage.getItem('movieFavorites_guest');
+            setFavorites(saved ? JSON.parse(saved) : []);
+        } catch {
+            setFavorites([]);
+        }
     }
-  }, [storageKey]);
+  }, [user, db]);
 
-  // Save favorites whenever they change
+  // Sync Guest Mode updates to LocalStorage
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(favorites));
-  }, [favorites, storageKey]);
+      if (!user) {
+          localStorage.setItem('movieFavorites_guest', JSON.stringify(favorites));
+      }
+  }, [favorites, user]);
 
-  const addToFavorites = (movie) => {
-    setFavorites(prev => prev.some(m => m.id === movie.id) ? prev : [...prev, movie]);
+  const addToFavorites = async (movie) => {
+    // Optimistic check
+    if (favorites.some(m => m.id === movie.id)) return;
+
+    if (user && db) {
+        // Add to Cloud
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const watchlistRef = collection(db, 'artifacts', appId, 'users', user.uid, 'watchlist');
+        
+        await addDoc(watchlistRef, {
+            id: movie.id, 
+            title: movie.title, 
+            poster_path: movie.poster_path,
+            release_date: movie.release_date,
+            vote_average: movie.vote_average,
+            overview: movie.overview
+        });
+    } else {
+        // Add to Local
+        setFavorites(prev => [...prev, movie]);
+    }
   };
-  const removeFromFavorites = (id) => setFavorites(prev => prev.filter(m => m.id !== id));
+
+  const removeFromFavorites = async (movieId) => {
+    if (user && db) {
+        // Remove from Cloud
+        const movieToDelete = favorites.find(m => m.id === movieId);
+        if (movieToDelete?.firestoreId) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'watchlist', movieToDelete.firestoreId);
+            await deleteDoc(docRef);
+        }
+    } else {
+        // Remove from Local
+        setFavorites(prev => prev.filter(m => m.id !== movieId));
+    }
+  };
+
   const isFavorite = (id) => favorites.some(m => m.id === id);
 
   return (
@@ -140,7 +236,8 @@ function SkeletonDetails() {
   );
 }
 
-// --- UI COMPONENTS ---
+// --- COMPONENTS ---
+
 function MovieCard({ movie }) {
   const { isFavorite, addToFavorites, removeFromFavorites } = useFavorites();
   const favorite = isFavorite(movie.id);
@@ -193,7 +290,7 @@ function MovieCard({ movie }) {
   );
 }
 
-// --- NEW HEADER COMPONENT WITH AUTH ---
+// --- HEADER ---
 function Header() {
   const { toggleTheme, mode } = useContext(ThemeContext);
   const { user, signInWithGoogle, logout } = useAuth();
@@ -206,7 +303,7 @@ function Header() {
             </h1>
             {user && (
                 <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs font-semibold text-gray-500 dark:text-gray-400">
-                    Welcome back, {user.displayName.split(' ')[0]}!
+                    Welcome, {user.displayName ? user.displayName.split(' ')[0] : 'User'}!
                 </span>
             )}
         </div>
@@ -216,21 +313,20 @@ function Header() {
                 {mode === 'dark' ? <SunIcon className="w-5 h-5"/> : <MoonIcon className="w-5 h-5"/>}
             </button>
 
-            {/* Auth Button Logic */}
             {user ? (
                 <>
                     <Link to="/favorites" className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-full font-bold transition-all shadow-md hover:shadow-red-500/20">
-                        <HeartIcon className="w-5 h-5 fill-current"/> My Favorites
+                        <HeartIcon className="w-5 h-5 fill-current"/> My Watchlist
                     </Link>
                     <div className="relative group">
                         <img 
-                            src={user.photoURL} 
-                            alt={user.displayName} 
+                            src={user.photoURL || "https://ui-avatars.com/api/?name=" + user.email} 
+                            alt="User" 
                             className="w-10 h-10 rounded-full border-2 border-white dark:border-gray-700 cursor-pointer"
                         />
                         <button 
                             onClick={logout}
-                            className="absolute top-12 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl rounded-lg py-2 px-4 text-sm font-bold text-red-500 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity"
+                            className="absolute top-12 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl rounded-lg py-2 px-4 text-sm font-bold text-red-500 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-50 whitespace-nowrap"
                         >
                             Sign Out
                         </button>
@@ -250,28 +346,42 @@ function Header() {
   );
 }
 
-// --- PAGES ---
-
+// --- HOME PAGE ---
 function HomePage() {
+    const { toggleTheme, mode } = useContext(ThemeContext);
     const [movies, setMovies] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [genreList, setGenreList] = useState([]);
-    const [filters, setFilters] = useState({ genreId: '', year: '', sortBy: 'popularity.desc' });
+    
+    const [filters, setFilters] = useState({
+        genreId: '',
+        year: '',
+        sortBy: 'popularity.desc'
+    });
 
-    useEffect(() => { fetchGenres().then(setGenreList).catch(console.error); }, []);
+    useEffect(() => {
+        fetchGenres().then(setGenreList).catch(console.error);
+    }, []);
 
     useEffect(() => {
         const loadMovies = async () => {
             setLoading(true);
             try {
                 let data;
-                if (searchQuery.trim()) data = await fetchSearchMovies(searchQuery);
-                else data = await fetchDiscoverMovies(filters);
+                if (searchQuery.trim()) {
+                    data = await fetchSearchMovies(searchQuery);
+                } else {
+                    data = await fetchDiscoverMovies(filters);
+                }
                 setMovies(data.results || []);
-            } catch (err) { console.error(err); } 
-            finally { setLoading(false); }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
         };
+
         const timeoutId = setTimeout(loadMovies, 500);
         return () => clearTimeout(timeoutId);
     }, [searchQuery, filters]);
@@ -299,28 +409,43 @@ function HomePage() {
                     />
                     <svg className="w-6 h-6 absolute left-3 top-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="relative">
-                        <select value={filters.genreId} onChange={(e) => handleFilterChange('genreId', e.target.value)} className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer">
+                        <select 
+                            value={filters.genreId}
+                            onChange={(e) => handleFilterChange('genreId', e.target.value)}
+                            className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
+                        >
                             <option value="">All Genres</option>
                             {genreList.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                         </select>
                         <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
                     </div>
+
                     <div className="relative">
-                        <select value={filters.year} onChange={(e) => handleFilterChange('year', e.target.value)} className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer">
+                        <select 
+                            value={filters.year}
+                            onChange={(e) => handleFilterChange('year', e.target.value)}
+                            className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
+                        >
                             <option value="">Any Year</option>
                             {years.map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
-                        <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
+                        <svg className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     </div>
+
                     <div className="relative">
-                        <select value={filters.sortBy} onChange={(e) => handleFilterChange('sortBy', e.target.value)} className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer">
+                        <select 
+                            value={filters.sortBy}
+                            onChange={(e) => handleFilterChange('sortBy', e.target.value)}
+                            className="w-full appearance-none px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
+                        >
                             <option value="popularity.desc">Most Popular</option>
                             <option value="vote_average.desc">Highest Rated</option>
                             <option value="primary_release_date.desc">Newest Releases</option>
                         </select>
-                        <FilterIcon className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
+                        <svg className="w-5 h-5 absolute right-3 top-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
                     </div>
                 </div>
             </section>
@@ -336,29 +461,31 @@ function HomePage() {
             ) : (
                 <div className="text-center py-20">
                     <p className="text-xl text-gray-500">No movies found matching your criteria.</p>
+                    <button onClick={() => {setSearchQuery(''); setFilters({genreId:'', year:'', sortBy:'popularity.desc'})}} className="mt-4 text-red-500 hover:underline">Clear all filters</button>
                 </div>
             )}
         </div>
     );
 }
 
+// --- FAVORITES PAGE ---
 function FavoritesPage() {
     const { favorites } = useFavorites();
-    const { user } = useAuth(); // personalized message
+    const { user } = useAuth();
 
     return (
         <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
             <header className="flex justify-between items-center mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Collection</h1>
-                    {user && <p className="text-gray-500 text-sm mt-1">Saved for {user.email}</p>}
+                <div className="flex flex-col">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Watchlist</h1>
+                    {user && <span className="text-sm text-gray-500 mt-1">Synced to cloud for {user.displayName || user.email}</span>}
                 </div>
                 <Link to="/" className="text-gray-500 hover:text-red-500 transition-colors">← Back to Discover</Link>
             </header>
             {favorites.length === 0 ? (
                 <div className="text-center py-20 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
                     <HeartIcon className="w-16 h-16 text-gray-300 mx-auto mb-4"/>
-                    <p className="text-xl text-gray-500">Your favorites list is empty.</p>
+                    <p className="text-xl text-gray-500">Your watchlist is empty.</p>
                     <Link to="/" className="mt-4 inline-block bg-red-600 text-white px-6 py-2 rounded-full hover:bg-red-700 transition-colors">Start Browsing</Link>
                 </div>
             ) : (
@@ -370,11 +497,13 @@ function FavoritesPage() {
     );
 }
 
+// --- MOVIE DETAILS PAGE ---
 function MovieDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [movie, setMovie] = useState(null);
     const [loading, setLoading] = useState(true);
+
     const { isFavorite, addToFavorites, removeFromFavorites } = useFavorites();
 
     useEffect(() => {
@@ -407,7 +536,7 @@ function MovieDetails() {
                         <h1 className="text-4xl font-extrabold text-gray-900 dark:text-gray-100 mb-4">{movie.title}</h1>
                         <p className="text-gray-700 dark:text-gray-300 leading-relaxed mb-8">{movie.overview}</p>
                         <button onClick={() => favorite ? removeFromFavorites(movie.id) : addToFavorites(movie)} className={`flex items-center justify-center w-full lg:w-auto px-6 py-3 rounded-full font-bold text-lg transition-colors duration-200 shadow-md ${favorite ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}>
-                            <HeartIcon className={`h-6 w-6 mr-3 ${favorite ? 'fill-white' : 'fill-current'}`}/> {favorite ? 'Remove' : 'Add to Favorites'}
+                            <HeartIcon className={`h-6 w-6 mr-3 ${favorite ? 'fill-white' : 'fill-current'}`}/> {favorite ? 'Remove' : 'Add to Watchlist'}
                         </button>
                     </div>
                 </div>
